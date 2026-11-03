@@ -32,6 +32,9 @@ jobs:
           ISRAEL_PROXY: ${{ secrets.ISRAEL_PROXY }}
           PREV_BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
         run: python collector/collect.py
+      - name: Test basket on real data (Ganei Tikva)
+        continue-on-error: true
+        run: node collector/test_basket.mjs _site
       - name: Save geocoding cache
         run: |
           if ! git diff --quiet cache/; then
