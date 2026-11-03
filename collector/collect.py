@@ -263,6 +263,8 @@ def main() -> int:
     prev_stores = {s["id"]: s for s in prev_index.get("stores", [])}
 
     info = {c.slug: c for c in ilp.list_chains()}
+    t0 = time.time()
+    budget_s = float(CFG.get("time_budget_min", 75)) * 60
     proxy_client = HttpClient(proxy=ISRAEL_PROXY) if ISRAEL_PROXY else None
 
     chain_report, stores_out = [], []
@@ -272,7 +274,15 @@ def main() -> int:
         rep = {"slug": slug, "name": name_he, "status": "ok", "detail": "",
                "stores_total": 0, "stores_in_area": 0, "stores_with_prices": 0}
         chain_report.append(rep)
-        log(f"== {slug} ({name_he})")
+        log(f"== {slug} ({name_he})  t={int(time.time()-t0)}s")
+        if time.time() - t0 > budget_s:
+            rep["status"] = "error"
+            rep["detail"] = "דילוג: נגמר זמן הריצה, ייאסף בריצה הבאה"
+            for sid, s in prev_stores.items():
+                if s["chain"] == slug and reuse_prev(s, stores_out):
+                    rep["stores_in_area"] += 1
+                    rep["stores_with_prices"] += 1
+            continue
         try:
             adapter = get_adapter(slug, client=proxy_client) if proxy_client else get_adapter(slug)
             sref = adapter.latest(FileType.STORES)
@@ -289,6 +299,8 @@ def main() -> int:
             continue
 
         rep["stores_total"] = len(stores)
+        log(f"  stores file: {len(stores)} branches")
+        kept = []
         for st in stores:
             city = clean(st.city)
             if city.isdigit():
@@ -319,6 +331,17 @@ def main() -> int:
             if dist > radius:
                 continue
             rep["stores_in_area"] += 1
+            kept.append((st, city, addr, sname, loc, quality, dist))
+        geo.save()
+        price_refs = promo_refs = {}
+        if kept:
+            try:
+                price_refs = latest_by_store(adapter, FileType.PRICE_FULL)
+                promo_refs = latest_by_store(adapter, FileType.PROMO_FULL)
+            except Exception as exc:
+                log(f"  listing failed: {type(exc).__name__}: {str(exc)[:150]}")
+            log(f"  {len(kept)} branches in area; listed {len(price_refs)} price files t={int(time.time()-t0)}s")
+        for st, city, addr, sname, loc, quality, dist in kept:
             sid = f"{slug}-{st.store_id}"
             meta = {
                 "id": sid, "chain": slug, "chain_he": name_he, "store_id": st.store_id,
@@ -327,11 +350,12 @@ def main() -> int:
                 "loc_quality": quality, "sub_chain": clean(st.sub_chain_name),
             }
             try:
-                pref = adapter.latest(FileType.PRICE_FULL, store_id=st.store_id)
+                key = (st.store_id or "").lstrip("0")
+                pref = price_refs.get(key) or adapter.latest(FileType.PRICE_FULL, store_id=st.store_id)
                 pfile = ilp.parse(adapter.download(pref))
                 promos, promo_ref = {}, None
                 try:
-                    promo_ref = adapter.latest(FileType.PROMO_FULL, store_id=st.store_id)
+                    promo_ref = promo_refs.get(key) or adapter.latest(FileType.PROMO_FULL, store_id=st.store_id)
                     promos = simple_promos(ilp.parse(adapter.download(promo_ref)))
                 except Exception as exc:
                     log(f"  promos {sid}: {type(exc).__name__}")
@@ -381,6 +405,16 @@ def main() -> int:
     ok = sum(1 for s in stores_out if s.get("file"))
     log(f"done: {ok} branches with prices, geocode calls {geo.calls}")
     return 0
+
+
+def latest_by_store(adapter, ftype) -> dict:
+    """One pass over a chain's listing: newest file per store id."""
+    out = {}
+    for ref in adapter.iter_files(file_type=ftype):
+        k = (ref.store_id or "").lstrip("0")
+        if k and k not in out:
+            out[k] = ref
+    return out
 
 
 def reuse_prev(meta: dict, stores_out: list) -> bool:
