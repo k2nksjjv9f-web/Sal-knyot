@@ -1,0 +1,34 @@
+name: חיפוש סניפים ברשימה הרשמית
+on:
+  workflow_dispatch:
+    inputs:
+      terms:
+        description: "מילות חיפוש מופרדות ב-|"
+        required: true
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Search directory and index
+        env:
+          TERMS: ${{ github.event.inputs.terms }}
+        run: |
+          BASE=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          curl -sfL "$BASE/data/directory.json" -o dir.json
+          curl -sfL "$BASE/data/index.json" -o ix.json
+          python3 - <<'PY'
+          import json, os
+          d = json.load(open("dir.json"))["stores"]; ix = json.load(open("ix.json"))
+          have = {s["id"]: s for s in ix["stores"]}
+          print("directory branches:", len(d))
+          for term in os.environ["TERMS"].split("|"):
+              words = term.split()
+              print(f"\n=== {term}")
+              for b in d:
+                  txt = " ".join(str(b.get(k) or "") for k in ("chain_he","sub_chain","name","address","city"))
+                  if all(w in txt for w in words):
+                      s = have.get(b["id"])
+                      st = ("PRICES " + str(s.get("price_file_time"))) if s and s.get("file") else ("IN INDEX no file" if s else "not collected")
+                      print(" ", b["id"], "|", txt, "|", st, "| lat", s and s.get("lat"), s and s.get("lon"))
+          print("\nchains:", [(c["slug"], c["status"]) for c in ix["chains"]])
+          PY
