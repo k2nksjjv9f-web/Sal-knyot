@@ -524,7 +524,8 @@ async function runManualCompare() {
   if (!lines.length) return msg('יש להזין לפחות מוצר אחד', true);
   const home = $('#address').value.trim() ? await geocode(false) : null;
   msg('');
-  const cols = state.branches.map(sel => ({ sel, ...branchStatus(sel) }));
+  // branches with prices first (more readable on a phone); order otherwise as chosen
+  const cols = state.branches.map(sel => ({ sel, ...branchStatus(sel) })).sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   const withData = cols.filter(c => c.ok);
   btn.disabled = true; btn.textContent = `טוען מחירים מ-${withData.length} סניפים…`;
   try {
