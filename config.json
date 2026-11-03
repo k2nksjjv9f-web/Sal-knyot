@@ -1,0 +1,39 @@
+{
+  "center": {
+    "label": "גני תקווה",
+    "lat": 32.0597,
+    "lon": 34.8735
+  },
+  "radius_km": 7,
+  "geocode_budget": 900,
+  "chains": [
+    "shufersal",
+    "rami-levy",
+    "yochananof",
+    "victory",
+    "osher-ad",
+    "carrefour",
+    "hatzi-hinam",
+    "mahsanei-hashuk",
+    "tiv-taam",
+    "keshet-teamim",
+    "super-yuda",
+    "fresh-market",
+    "stop-market",
+    "politzer",
+    "salach-dabach",
+    "king-store",
+    "super-bareket",
+    "maayan-2000",
+    "meshnat-yosef",
+    "shefa-birkat-hashem",
+    "shuk-hayir",
+    "super-sapir",
+    "zol-vebegadol",
+    "city-market",
+    "het-cohen",
+    "super-cofix",
+    "yellow",
+    "dor-alon"
+  ]
+}

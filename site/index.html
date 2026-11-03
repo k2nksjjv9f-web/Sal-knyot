@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>סל קניות – השוואת מחירים</title>
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="סל קניות">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>סל קניות <span>השוואת מחירים לפי סניף</span></h1>
+    <div id="dataStatus" class="data-status">טוען נתונים…</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card" id="searchCard">
+    <h2>פרטי החיפוש</h2>
+
+    <label class="lbl" for="address">כתובת</label>
+    <div class="row">
+      <input id="address" type="text" placeholder="לדוגמה: הגפן 10, גני תקווה" autocomplete="street-address">
+      <button id="locateBtn" class="btn ghost" type="button">אתר</button>
+    </div>
+    <div class="row small">
+      <label class="check"><input type="checkbox" id="saveAddr" checked> שמור כתובת במכשיר</label>
+      <span id="addrResult" class="muted"></span>
+    </div>
+
+    <label class="lbl">רדיוס חיפוש</label>
+    <div class="chips" id="radiusChips">
+      <button type="button" data-r="1">1 ק"מ</button>
+      <button type="button" data-r="2">2 ק"מ</button>
+      <button type="button" data-r="3" class="on">3 ק"מ</button>
+      <button type="button" data-r="5">5 ק"מ</button>
+    </div>
+
+    <div class="list-head">
+      <label class="lbl" for="listText">רשימת קניות</label>
+      <div class="list-tools">
+        <select id="savedLists" aria-label="רשימות שמורות"><option value="">רשימות שמורות…</option></select>
+        <button id="saveListBtn" class="btn ghost sm" type="button">שמור</button>
+        <button id="delListBtn" class="btn ghost sm" type="button" title="מחק רשימה שמורה">מחק</button>
+      </div>
+    </div>
+    <textarea id="listText" rows="9" placeholder="מוצר בכל שורה, לדוגמה:&#10;חלב תנובה 3%&#10;2 חבילות פסטה&#10;קילו עגבניות&#10;חזה עוף 1.5 ק&quot;ג"></textarea>
+    <div class="row">
+      <input id="addLine" type="text" placeholder="הוסף מוצר בשורה נפרדת">
+      <button id="addLineBtn" class="btn ghost" type="button">הוסף</button>
+    </div>
+
+    <div class="row small">
+      <label class="check"><input type="checkbox" id="usePromos" checked> כלול מבצעי יחידה לכלל הלקוחות</label>
+    </div>
+
+    <button id="compareBtn" class="btn primary big" type="button">השווה מחירים</button>
+    <div id="msg" class="msg" role="status"></div>
+  </section>
+
+  <section id="results" hidden>
+    <div class="summary" id="summary"></div>
+
+    <section class="card">
+      <h2>השוואת סלים</h2>
+      <p class="muted small" id="rankNote"></p>
+      <div class="table-wrap"><table class="tbl" id="rankTable"></table></div>
+    </section>
+
+    <section class="card" id="splitCard"></section>
+
+    <section class="card" id="lineCard">
+      <h2>התאמת מוצרים</h2>
+      <p class="muted small">המוצר המדויק שנבחר לכל שורה (לפי ברקוד). אפשר להחליף את ההתאמה, וההשוואה תחושב מחדש.</p>
+      <div id="lineRefs"></div>
+    </section>
+
+    <section class="card" id="noDataCard"></section>
+    <section class="card" id="coverageCard"></section>
+  </section>
+</main>
+
+<dialog id="storeDlg">
+  <div class="dlg-head">
+    <div><h3 id="dlgTitle"></h3><div id="dlgSub" class="muted small"></div></div>
+    <button class="btn ghost sm" id="dlgClose" type="button">סגור</button>
+  </div>
+  <div id="dlgBody"></div>
+</dialog>
+
+<dialog id="pickDlg">
+  <div class="dlg-head">
+    <div><h3 id="pickTitle">בחירת מוצר</h3><div class="muted small">בחר את המוצר המדויק שאתה רוצה</div></div>
+    <button class="btn ghost sm" id="pickClose" type="button">סגור</button>
+  </div>
+  <div id="pickBody"></div>
+</dialog>
+
+<footer class="wrap foot muted small">
+  מקור המחירים: קובצי שקיפות המחירים שהרשתות מחויבות לפרסם לפי חוק קידום התחרות בענף המזון. מיקום: OpenStreetMap.
+  המחירים הם מחירי מדף כפי שפורסמו; מחיר בקופה עשוי להשתנות (מבצעי מועדון, קופונים, מבצעי כמות).
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
