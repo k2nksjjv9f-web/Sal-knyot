@@ -431,7 +431,8 @@ async function findBranchUI() {
   if (!chain && !addr) { el.innerHTML = '<p class="small bad">יש להקליד שם רשת או כתובת</p>'; return; }
   el.innerHTML = '<p class="small muted">מחפש…</p>';
   const dir = await loadDirectory();
-  const found = M.findBranches(chain, addr, dir, addr ? 12 : 40);
+  const priced = new Set((state.index?.stores || []).filter(x => x.file).map(x => x.id));
+  const found = M.findBranches(chain, addr, dir, addr ? 12 : 40, { priority: b => priced.has(b.id) ? 1 : 0 });
   const chosen = new Set(state.branches.map(b => b.id).filter(Boolean));
   let html = '';
   if (found.length) {

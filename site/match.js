@@ -36,7 +36,8 @@ const COUNT_RE = new RegExp(`(^|\\s)(${COUNT_WORDS})(?=\\s|$)`, 'g');
 const MODIFIERS = ['טעמ', 'בטעמ', 'משקה', 'רסק', 'מיצ', 'ממרח', 'חטיפ', 'מרק', 'רוטב', 'אבקת', 'תבלינ', 'שוקו',
   'מעדנ', 'גלידה', 'סויה', 'שקדימ', 'שיבולת', 'קוקוס', 'לקטוז', 'דיאט', 'לייט', 'קפוא', 'קפואה', 'שימורימ',
   'ממולא', 'מתובל', 'מעושנ', 'שניצל', 'קציצות', 'פירורי', 'עוגיות', 'עוגת', 'חטיפי', 'סבונ', 'מגבונימ',
-  'ממתיק', 'קרמ', 'יוגורט', 'פודינג', 'ריבה', 'סלט', 'מאודה', 'מבושל', 'צלוי', 'שיפודי', 'נקניק', 'פרוס'];
+  'ממתיק', 'קרמ', 'יוגורט', 'פודינג', 'ריבה', 'סלט', 'מאודה', 'מבושל', 'צלוי', 'שיפודי', 'נקניק', 'פרוס',
+  'עמיד', 'שרי', 'תמר', 'בייבי', 'מיני', 'ארוז', 'אורגני', 'מיובש', 'כבוש', 'חמוצ', 'קלוי'];
 
 /** Parse one free-text line ("2 חבילות פסטה", "חזה עוף 1.5 ק"ג"). */
 export function parseLine(raw) {
@@ -103,7 +104,13 @@ export function itemSize(it) {
     else if ((m = n.match(/(\d+(?:\.\d+)?)\s*(גרמ|גר|ג)(\s|$)/))) res = { base: 'g', amount: parseFloat(m[1]) };
     else if ((m = n.match(/(\d+(?:\.\d+)?)\s*(ליטר|ל)(\s|$)/))) res = { base: 'ml', amount: parseFloat(m[1]) * 1000 };
     else if ((m = n.match(/(\d+(?:\.\d+)?)\s*(מל)(\s|$)/))) res = { base: 'ml', amount: parseFloat(m[1]) };
+    else if ((m = n.match(/(\d+)\s*(יח|יחידות|גלילימ|גליל|גל|ביצימ)(\s|$)/)) || (m = n.match(/(^|\s)(\d+)\s+ביצ/))) {
+      const k = parseFloat(m[2] && /^\d/.test(m[2]) ? m[2] : m[1]);
+      if (k > 1) res = { base: 'u', amount: k };
+    }
   }
+  // "1 unit" says nothing about pack size (a 12-pack is also "1 unit")
+  if (res && res.base === 'u' && res.amount <= 1) res = null;
   if (res && !(res.amount > 0)) res = null;
   it._size = res;
   return res;
@@ -360,7 +367,7 @@ function placeTokMatch(q, t) {
 }
 
 /** Find branches in the directory for a typed chain + address. */
-export function findBranches(chainText, addrText, dir, limit = 12) {
+export function findBranches(chainText, addrText, dir, limit = 12, opts = {}) {
   const ct = normPlace(chainText).split(' ').filter(Boolean);
   const at = normPlace(addrText).split(' ').filter(t => t && !['רחוב', 'רח', 'סניף', 'שד', 'שדרות'].includes(t));
   const out = [];
@@ -375,10 +382,11 @@ export function findBranches(chainText, addrText, dir, limit = 12) {
       let got = 0;
       for (const q of at) if (b._a.some(t => placeTokMatch(q, t))) got++;
       score = got / at.length;
-      if (score < 0.5) continue;
+      // short addresses ("קריית אונו") must match fully; long ones mostly
+      if (score < (at.length <= 3 ? 1 : 0.67)) continue;
     }
-    out.push({ b, score });
+    out.push({ b, score, pri: opts.priority ? opts.priority(b) : 0 });
   }
-  out.sort((x, y) => y.score - x.score);
+  out.sort((x, y) => y.score - x.score || y.pri - x.pri);
   return out.slice(0, limit).map(x => x.b);
 }
