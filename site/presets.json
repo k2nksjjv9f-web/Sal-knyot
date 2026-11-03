@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "sets": [
+    {
+      "name": "הסופרים הקבועים שלי",
+      "branches": [
+        {"id": "osher-ad-032", "chain": "osher-ad", "chain_he": "אושר עד", "store_id": "032", "name": "קרית אונו (צומת סביון)", "address": "שמירה אימבר גדיש 9", "city": "קרית אונו"},
+        {"id": null, "chain": null, "chain_he": "סופר טל", "name": "גני תקווה", "address": "", "city": "גני תקווה",
+         "note": "סופר עצמאי שלא מופיע ברשימות של אף רשת. רק רשתות גדולות מחויבות בחוק לפרסם מחירים, ולכן אין לו נתוני מחירים"},
+        {"id": null, "chain": "victory", "chain_he": "ויקטורי", "name": "גני תקווה", "address": "", "city": "גני תקווה"},
+        {"id": null, "chain": "carrefour", "chain_he": "קרפור", "name": "גני תקווה", "address": "", "city": "גני תקווה"}
+      ]
+    }
+  ]
+}

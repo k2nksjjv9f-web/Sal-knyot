@@ -389,6 +389,7 @@ function initBranchUI() {
   renderBranchSets();
   renderSelected();
   setMode(state.mode);
+  importPresets();
 }
 
 async function loadDirectory() {
@@ -411,6 +412,11 @@ function chainInfo(slug) { return (state.index?.chains || []).find(c => c.slug =
 
 /** Why a selected branch has (or lacks) prices. Never substitutes another branch. */
 function branchStatus(sel) {
+  if (sel.note) return { ok: false, reason: sel.note };
+  if (sel.chain) {
+    const chx = chainInfo(sel.chain);
+    if (chx && chx.status === 'error' && (!sel.id || !state.index?.stores.some(s => s.id === sel.id && s.file))) return { ok: false, reason: friendlyErr(chx) };
+  }
   if (!sel.id) return { ok: false, reason: 'הסניף לא זוהה ברשימת הסניפים הרשמית של הרשת, ולכן אין לו נתוני מחירים' };
   const meta = state.index?.stores.find(s => s.id === sel.id);
   if (meta && meta.file) return { ok: true, meta };
@@ -480,6 +486,27 @@ function renderSelected() {
     store.set('branches', state.branches);
     renderSelected();
   });
+}
+
+async function importPresets() {
+  try {
+    const r = await fetch('presets.json', { cache: 'no-cache' });
+    if (!r.ok) return;
+    const pr = await r.json();
+    const done = store.get('presetsVersion', 0);
+    if (pr.version <= done) return;
+    const all = branchSets();
+    for (const set of pr.sets) {
+      const same = all.find(x => x.name === set.name);
+      if (same) {
+        // add preset branches that aren't already in the user's saved set
+        for (const b of set.branches) if (!same.branches.some(x => (x.id && x.id === b.id) || (!x.id && !b.id && x.chain_he === b.chain_he && x.city === b.city))) same.branches.push(b);
+      } else all.unshift({ id: 'preset-' + Date.now(), name: set.name, branches: set.branches });
+    }
+    store.set('branchSets', all);
+    store.set('presetsVersion', pr.version);
+    renderBranchSets();
+  } catch { }
 }
 
 function branchSets() { return store.get('branchSets', []); }
