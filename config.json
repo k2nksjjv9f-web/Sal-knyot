@@ -35,5 +35,6 @@
     "super-cofix",
     "yellow",
     "dor-alon"
-  ]
+  ],
+  "time_budget_min": 40
 }
