@@ -4,7 +4,7 @@ const { I } = M;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ils = n => `${n.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪`;
-const km = n => `${n.toLocaleString('he-IL', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} ק"מ`;
+const km = n => n == null || isNaN(n) ? '—' : `${n.toLocaleString('he-IL', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} ק"מ`;
 
 // ---------------------------------------------------------------- storage
 const store = {
@@ -17,6 +17,7 @@ const state = {
   index: null, home: store.get('home', null), radius: store.get('radius', 3),
   pins: store.get('pins', {}), // normalized line -> item code
   storeCache: new Map(), last: null,
+  mode: store.get('mode', 'radius'), branches: store.get('branches', []), directory: null,
 };
 
 function haversine(a, b) {
@@ -55,18 +56,19 @@ function initUI() {
   $('#listText').value = store.get('current', '');
   $('#listText').addEventListener('input', () => store.set('current', $('#listText').value));
   $('#usePromos').checked = store.get('promos', true);
-  $('#usePromos').onchange = () => { store.set('promos', $('#usePromos').checked); if (state.last) runCompare(); };
+  $('#usePromos').onchange = () => { store.set('promos', $('#usePromos').checked); if (state.last) (state.last.manual ? runManualCompare() : runCompare()); };
   $('#addLineBtn').onclick = addLine;
   $('#addLine').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addLine(); } });
   $('#locateBtn').onclick = () => geocode(true);
   $('#address').addEventListener('change', () => { state.home = null; $('#addrResult').textContent = ''; });
-  $('#compareBtn').onclick = runCompare;
+  $('#compareBtn').onclick = () => state.mode === 'manual' ? runManualCompare() : runCompare();
   $('#saveListBtn').onclick = saveList;
   $('#delListBtn').onclick = deleteList;
   $('#savedLists').onchange = loadList;
   $('#dlgClose').onclick = () => $('#storeDlg').close();
   $('#pickClose').onclick = () => $('#pickDlg').close();
   renderSavedLists();
+  initBranchUI();
 }
 
 function addLine() {
@@ -200,6 +202,7 @@ function staleTag(s) { return s.stale ? `<span class="tag stale" title="הנתו
 
 function render() {
   const { lines, baskets, split } = state.last;
+  showCards(false);
   const minMissing = baskets[0].missing;
   const group = baskets.filter(b => b.missing === minMissing);
   const cheap = group[0], exp = group[group.length - 1];
@@ -238,11 +241,11 @@ function renderSplit(sp) {
       <div class="stat"><div class="k">סופר אחד</div><div class="v">${ils(sp.single)}</div><div class="s">${esc(storeName(sp.best.store))}</div></div>
       <div class="stat"><div class="k">מפוצל</div><div class="v">${ils(sp.total)}</div><div class="s">2 סניפים</div></div>
       <div class="stat ${sp.worth ? 'good' : ''}"><div class="k">חיסכון</div><div class="v">${ils(Math.max(0, sp.saving))}</div><div class="s">${(sp.saving / sp.single * 100).toFixed(1)}%</div></div>
-      <div class="stat"><div class="k">נסיעה נוספת</div><div class="v">${km(sp.extraKm)}</div><div class="s">מסלול בית ← א ← ב ← בית</div></div>
+      <div class="stat"><div class="k">נסיעה נוספת</div><div class="v">${sp.noDist ? '—' : km(sp.extraKm)}</div><div class="s">${sp.noDist ? 'הזן כתובת לחישוב מרחק' : 'מסלול בית ← א ← ב ← בית'}</div></div>
     </div>
     <p class="small"><b>א: ${esc(storeName(sp.A.store))}</b> – ${items('A')}<br><b>ב: ${esc(storeName(sp.B.store))}</b> – ${items('B')}</p>
     <div class="verdict ${sp.worth ? 'yes' : 'no'}">${sp.worth
-      ? `מומלץ לפצל: חוסכים ${ils(sp.saving)}, בתוספת נסיעה של כ-${km(sp.extraKm)}.`
+      ? `מומלץ לפצל: חוסכים ${ils(sp.saving)}${sp.noDist ? '' : `, בתוספת נסיעה של כ-${km(sp.extraKm)}`}.`
       : `לא מומלץ לפצל: החיסכון (${ils(Math.max(0, sp.saving))}) נמוך מהסף (${ils(sp.threshold)}, הגבוה מבין 15 ₪ ל-5% מהסל), ולא מצדיק את הטרחה.`}</div>`;
 }
 
@@ -288,7 +291,7 @@ function openPicker(i) {
     if (b.dataset.c) state.pins[key] = b.dataset.c; else delete state.pins[key];
     store.set('pins', state.pins);
     $('#pickDlg').close();
-    runCompare();
+    state.last && state.last.manual ? runManualCompare() : runCompare();
   });
   $('#pickDlg').showModal();
 }
@@ -357,5 +360,248 @@ async function findNoDataSupermarkets(home, near) {
   }
 }
 
+// ================================================================
+// Manual branch selection ("סניפים שבחרתי")
+// ================================================================
+function showCards(manual) {
+  $('#matrixCard').hidden = !manual;
+  $('#rankCard').hidden = manual;
+  $('#noDataCard').hidden = manual;
+}
+
+function setMode(m) {
+  state.mode = m; store.set('mode', m);
+  document.querySelectorAll('#modeChips button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  $('#radiusBlock').hidden = m === 'manual';
+  $('#branchBlock').hidden = m !== 'manual';
+  $('#addrLabel').textContent = m === 'manual' ? 'כתובת הבית (לא חובה – לחישוב מרחקים)' : 'כתובת';
+  $('#compareBtn').textContent = 'השווה מחירים';
+  if (m === 'manual') loadDirectory();
+}
+
+function initBranchUI() {
+  document.querySelectorAll('#modeChips button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+  $('#bFind').onclick = findBranchUI;
+  ['#bChain', '#bAddr'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); findBranchUI(); } }));
+  $('#saveBranchesBtn').onclick = saveBranchSet;
+  $('#delBranchesBtn').onclick = deleteBranchSet;
+  $('#savedBranchSets').onchange = loadBranchSet;
+  renderBranchSets();
+  renderSelected();
+  setMode(state.mode);
+}
+
+async function loadDirectory() {
+  if (state.directory) return state.directory;
+  try {
+    const r = await fetch('data/directory.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error(r.status);
+    state.directory = (await r.json()).stores;
+  } catch {
+    // older deployment without a directory: fall back to branches that have prices
+    state.directory = state.index ? state.index.stores.map(s => ({ ...s })) : [];
+  }
+  const names = new Set([...(state.index?.chains || []).map(c => c.name), ...state.directory.map(d => d.chain_he)]);
+  for (const d of state.directory) if (d.sub_chain && d.sub_chain !== d.chain_he && d.sub_chain.length < 25) names.add(d.sub_chain);
+  $('#chainList').innerHTML = [...names].sort().map(n => `<option value="${esc(n)}">`).join('');
+  return state.directory;
+}
+
+function chainInfo(slug) { return (state.index?.chains || []).find(c => c.slug === slug); }
+
+/** Why a selected branch has (or lacks) prices. Never substitutes another branch. */
+function branchStatus(sel) {
+  if (!sel.id) return { ok: false, reason: 'הסניף לא זוהה ברשימת הסניפים הרשמית של הרשת, ולכן אין לו נתוני מחירים' };
+  const meta = state.index?.stores.find(s => s.id === sel.id);
+  if (meta && meta.file) return { ok: true, meta };
+  const ch = chainInfo(sel.chain);
+  if (ch && ch.status === 'error') return { ok: false, reason: friendlyErr(ch) };
+  if (meta) return { ok: false, reason: 'הרשת לא פרסמה קובץ מחירים לסניף הזה באיסוף האחרון' };
+  const a = state.index?.area;
+  return { ok: false, reason: `הסניף מחוץ לאזור האיסוף (עד ${a ? a.radius_km : 7} ק"מ מ${a ? a.label : 'מרכז האזור'}), ולכן מחיריו לא נאספו` };
+}
+
+function branchLine(b) {
+  return `<b>${esc(b.chain_he)}</b> – ${esc(b.name || '')}<div class="sub">${esc([b.address, b.city].filter(Boolean).join(', '))}</div>`;
+}
+
+async function findBranchUI() {
+  const chain = $('#bChain').value.trim(), addr = $('#bAddr').value.trim();
+  const el = $('#bResults');
+  if (!chain && !addr) { el.innerHTML = '<p class="small bad">יש להקליד שם רשת או כתובת</p>'; return; }
+  el.innerHTML = '<p class="small muted">מחפש…</p>';
+  const dir = await loadDirectory();
+  const found = M.findBranches(chain, addr, dir, addr ? 12 : 40);
+  const chosen = new Set(state.branches.map(b => b.id).filter(Boolean));
+  let html = '';
+  if (found.length) {
+    html = found.map((b, i) => {
+      const st = branchStatus(b);
+      const info = st.ok ? `<span class="tag exact">יש מחירים</span> <span class="sub">קובץ מ-${esc(st.meta.price_file_time)}</span>` : `<span class="tag missing">אין נתוני מחירים</span>`;
+      return `<div class="cand"><div>${branchLine(b)}<div>${info}</div></div>
+        <button class="btn ghost sm" data-i="${i}" ${chosen.has(b.id) ? 'disabled' : ''}>${chosen.has(b.id) ? 'נבחר' : 'הוסף'}</button></div>`;
+    }).join('');
+  } else {
+    html = `<p class="small">לא נמצא סניף תואם ברשימות הסניפים הרשמיות שהרשתות מפרסמות. נסה לכתוב רק את שם העיר או את שם הרחוב.</p>`;
+  }
+  // allow adding an unrecognised branch explicitly (shown as "no price data", never priced from another branch)
+  if (chain) html += `<div class="cand"><div class="small muted">הסניף שחיפשת לא ברשימה? אפשר להוסיף אותו כמו שהקלדת. הוא יוצג בטבלה עם הסימון "אין נתוני מחירים".</div><button class="btn ghost sm" data-custom="1">הוסף כמו שהוקלד</button></div>`;
+  el.innerHTML = html;
+  el.querySelectorAll('button[data-i]').forEach(btn => btn.onclick = () => {
+    const b = found[+btn.dataset.i];
+    addBranch({ id: b.id, chain: b.chain, chain_he: b.chain_he, store_id: b.store_id, name: b.name, address: b.address, city: b.city });
+    btn.disabled = true; btn.textContent = 'נבחר';
+  });
+  const cb = el.querySelector('button[data-custom]');
+  if (cb) cb.onclick = () => {
+    addBranch({ id: null, chain: null, chain_he: chain, name: 'סניף לא מזוהה', address: addr, city: '' });
+    el.innerHTML = '';
+  };
+}
+
+function addBranch(b) {
+  if (b.id && state.branches.some(x => x.id === b.id)) return;
+  state.branches.push(b);
+  store.set('branches', state.branches);
+  renderSelected();
+}
+
+function renderSelected() {
+  const ol = $('#bSelected');
+  if (!state.branches.length) { ol.innerHTML = ''; return; }
+  ol.innerHTML = state.branches.map((b, i) => {
+    const st = state.index ? branchStatus(b) : { ok: true };
+    return `<li><div class="li-row"><div>${branchLine(b)}${st.ok ? '' : `<div class="sub warn">אין נתוני מחירים: ${esc(st.reason)}</div>`}</div>
+      <button class="x" data-i="${i}" title="הסר" aria-label="הסר סניף">✕</button></div></li>`;
+  }).join('');
+  ol.querySelectorAll('button.x').forEach(btn => btn.onclick = () => {
+    state.branches.splice(+btn.dataset.i, 1);
+    store.set('branches', state.branches);
+    renderSelected();
+  });
+}
+
+function branchSets() { return store.get('branchSets', []); }
+function renderBranchSets() {
+  $('#savedBranchSets').innerHTML = '<option value="">הסופרים הקבועים שלי…</option>' +
+    branchSets().map(x => `<option value="${esc(x.id)}">${esc(x.name)} (${x.branches.length} סניפים)</option>`).join('');
+}
+function saveBranchSet() {
+  if (!state.branches.length) return msg('לא נבחרו סניפים לשמירה', true);
+  const all = branchSets();
+  const cur = all.find(x => x.id === $('#savedBranchSets').value);
+  const name = prompt('שם לרשימת הסניפים:', cur ? cur.name : 'הסופרים הקבועים שלי');
+  if (!name) return;
+  const same = all.find(x => x.name === name);
+  if (same) same.branches = [...state.branches];
+  else all.unshift({ id: String(Date.now()), name, branches: [...state.branches] });
+  store.set('branchSets', all);
+  renderBranchSets();
+  msg(`נשמר: "${name}" (${state.branches.length} סניפים)`);
+}
+function loadBranchSet() {
+  const x = branchSets().find(v => v.id === $('#savedBranchSets').value);
+  if (!x) return;
+  state.branches = [...x.branches];
+  store.set('branches', state.branches);
+  renderSelected();
+  msg(`נטענה הרשימה "${x.name}". אפשר להשוות מחירים`);
+}
+function deleteBranchSet() {
+  const id = $('#savedBranchSets').value;
+  if (!id) return msg('בחר רשימת סניפים שמורה כדי למחוק', true);
+  store.set('branchSets', branchSets().filter(x => x.id !== id));
+  renderBranchSets();
+  msg('רשימת הסניפים נמחקה');
+}
+
+async function runManualCompare() {
+  const btn = $('#compareBtn');
+  if (!state.index) return msg('נתוני המחירים עוד לא זמינים', true);
+  if (!state.branches.length) return msg('יש לבחור לפחות סניף אחד להשוואה', true);
+  const lines = $('#listText').value.split('\n').map(s => s.trim()).filter(Boolean).map(M.parseLine).filter(l => l.tokens.length);
+  if (!lines.length) return msg('יש להזין לפחות מוצר אחד', true);
+  const home = $('#address').value.trim() ? await geocode(false) : null;
+  msg('');
+  const cols = state.branches.map(sel => ({ sel, ...branchStatus(sel) }));
+  const withData = cols.filter(c => c.ok);
+  btn.disabled = true; btn.textContent = `טוען מחירים מ-${withData.length} סניפים…`;
+  try {
+    const res = await pool(withData.map(c => () => loadStore(c.meta).then(st => { c.store = st; st.dist = home ? haversine(home, st) : null; })), 6);
+    for (const c of withData) if (!c.store) { c.ok = false; c.reason = 'שגיאה בטעינת קובץ המחירים של הסניף'; }
+    const loaded = cols.filter(c => c.ok).map(c => c.store);
+    const refs = lines.map(l => M.chooseReference(l, loaded, state.pins[M.norm(l.raw)]));
+    const baskets = loaded.length ? M.computeBaskets(lines, loaded, refs, $('#usePromos').checked) : [];
+    cols.forEach(c => { if (c.ok) c.basket = baskets[loaded.indexOf(c.store)]; });
+    const ranked = M.rankBaskets(baskets);
+    let split = null;
+    if (ranked.length >= 2) {
+      split = M.bestSplit(ranked, home || {}, (a, b) => (home && a.lat != null && b.lat != null) ? haversine(a, b) : 0);
+      if (split && !home) split.noDist = true;
+    }
+    state.last = { manual: true, lines, loaded, refs, baskets: ranked, split, home, cols };
+    renderManual();
+    $('#results').hidden = false;
+    $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    console.error(e);
+    msg('שגיאה בהשוואה: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'השווה מחירים';
+  }
+}
+
+const shortDate = t => { const m = String(t || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : ''; };
+
+function renderManual() {
+  const { lines, baskets, split, cols } = state.last;
+  showCards(true);
+  const rankOf = new Map(baskets.map((b, i) => [b, i + 1]));
+  const sum = $('#summary');
+  if (baskets.length) {
+    const minMissing = baskets[0].missing;
+    const group = baskets.filter(b => b.missing === minMissing);
+    const cheap = group[0], exp = group[group.length - 1];
+    const diff = exp.total - cheap.total, pct = exp.total > 0 ? diff / exp.total * 100 : 0;
+    sum.innerHTML = `
+      <div class="stat good"><div class="k">הסניף הזול ביותר</div><div class="v">${ils(cheap.total)}</div><div class="s">${esc(storeName(cheap.store))}</div></div>
+      <div class="stat"><div class="k">הסניף היקר ביותר</div><div class="v">${ils(exp.total)}</div><div class="s">${esc(storeName(exp.store))}</div></div>
+      <div class="stat"><div class="k">הפרש</div><div class="v">${ils(diff)}</div><div class="s">בין הזול ליקר</div></div>
+      <div class="stat"><div class="k">חיסכון</div><div class="v">${pct.toFixed(1)}%</div><div class="s">${group.length} סניפים עם ${minMissing ? minMissing + ' חסרים' : 'סל מלא'}</div></div>`;
+  } else sum.innerHTML = '';
+
+  const label = { exact: 'מדויק', alt: 'חלופה', name: 'לפי שם' };
+  const head = cols.map((c, ci) => {
+    const b = c.sel;
+    if (!c.ok) return `<th class="nd">${branchLine(b)}<span class="tag missing">אין נתוני מחירים</span><div class="sub">${esc(c.reason)}</div></th>`;
+    const st = c.store;
+    return `<th><div class="click" data-c="${ci}">${branchLine(st)}</div>${st.dist != null ? `<div class="sub">${km(st.dist)} מהבית</div>` : ''}<div class="sub">קובץ מחירים: ${esc(st.price_file_time)}</div>${staleTag(st)}</th>`;
+  }).join('');
+  // cheapest cell per row (among branches with a price)
+  const rowMin = lines.map((_, i) => Math.min(...cols.filter(c => c.ok && c.basket.res[i].status !== 'missing').map(c => c.basket.res[i].cost)));
+  const body = lines.map((l, i) => `<tr><td><b>${esc(l.raw)}</b></td>` + cols.map(c => {
+    if (!c.ok) return '<td class="nd">—</td>';
+    const r = c.basket.res[i];
+    if (r.status === 'missing') return `<td><span class="tag missing">חסר מידע</span><div class="sub">${esc(r.reason)}</div></td>`;
+    const best = Math.abs(r.cost - rowMin[i]) < 0.005 && cols.filter(x => x.ok).length > 1;
+    return `<td class="${best ? 'best' : ''}"><span class="price num">${ils(r.cost)}</span>${r.status !== 'exact' ? `<span class="tag ${r.status}">${label[r.status]}</span>` : ''}${r.promo ? '<span class="tag promo">מבצע</span>' : ''}
+      <div class="sub">${esc(r.item[I.name])}</div>${(r.notes || []).map(n => `<div class="sub warn">${esc(n)}</div>`).join('')}<div class="sub">מחיר מ-${esc(shortDate(r.item[I.upd]) || '—')}</div></td>`;
+  }).join('') + '</tr>').join('');
+  const foot = (title, f, cls = '') => `<tr class="${cls}"><td>${title}</td>` + cols.map(c => c.ok ? `<td class="num">${f(c.basket)}</td>` : '<td class="nd">—</td>').join('') + '</tr>';
+  const n = lines.length;
+  $('#matrixCard').innerHTML = `<h2>השוואה בין הסניפים שבחרת</h2>
+    <p class="muted small">כל עמודה היא סניף מסוים וכל שורה היא מוצר. המחירים לקוחים רק מקובץ המחירים של אותו סניף, ולעולם לא מסניף אחר של הרשת. בכל תא מופיע התאריך שבו נקבע המחיר הנוכחי, ובראש העמודה מועד קובץ המחירים. התא הזול ביותר בכל שורה מודגש בירוק. לחיצה על שם סניף פותחת פירוט מלא.</p>
+    <div class="table-wrap"><table class="tbl matrix"><thead><tr><th>מוצר</th>${head}</tr></thead><tbody>${body}</tbody>
+    <tfoot>${foot('מחיר כולל', b => `<b>${ils(b.total)}</b>`, 'total')}${foot('נמצאו', b => `${n - b.missing} מתוך ${n}`)}${foot('חסרי מחיר', b => `<span class="${b.missing ? 'bad' : 'ok'}">${b.missing}</span>`)}${foot('דירוג', b => `<b>${rankOf.get(b)}</b> מתוך ${baskets.length}`)}</tfoot></table></div>
+    ${baskets.length ? `<h3 style="margin-top:14px">דירוג מהזול ליקר</h3>
+    <ol class="rank-list">${baskets.map(b => `<li>${esc(storeName(b.store))} – <b>${ils(b.total)}</b>${b.missing ? ` <span class="bad small">(${b.missing} חסרים)</span>` : ''}</li>`).join('')}</ol>
+    <p class="small muted">הדירוג נקבע קודם לפי מספר המוצרים החסרים ואחר כך לפי המחיר, כדי שסניף שחסרים בו מוצרים לא ייראה זול רק בגלל זה. ההפרש מחושב בין הזול ליקר מבין הסניפים עם אותו מספר חסרים.</p>` : '<p class="bad">לאף אחד מהסניפים שבחרת אין נתוני מחירים.</p>'}`;
+  $('#matrixCard').querySelectorAll('[data-c]').forEach(el => el.onclick = () => openStore(cols[+el.dataset.c].basket));
+
+  if (baskets.length >= 2) renderSplit(split); else $('#splitCard').innerHTML = '<h2>קנייה מפוצלת</h2><p class="muted">צריך לפחות שני סניפים עם נתוני מחירים.</p>';
+  if (baskets.length) renderLineRefs(); else $('#lineRefs').innerHTML = '';
+  renderCoverage();
+}
+
 initUI();
-loadIndex();
+loadIndex().then(() => { renderSelected(); if (state.mode === 'manual') loadDirectory(); });

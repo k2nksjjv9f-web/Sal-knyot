@@ -223,7 +223,9 @@ export function chooseReference(line, stores, pinCode) {
     a.rank = a.best + 0.45 * (a.n / N);
     if (!ref || a.rank > ref.rank) ref = a;
   }
-  if (bestName && (!ref || bestName.s.score > ref.best + 0.25)) {
+  // "קילו עגבניות": loose (weighted) produce has no shared barcode; prefer it per store
+  const preferLoose = line.wantKg && bestName && bestName.it[I.w] && (!ref || bestName.s.score >= ref.best - 0.1);
+  if (bestName && (preferLoose || !ref || bestName.s.score > ref.best + 0.25)) {
     return { mode: 'name', item: bestName.it };
   }
   if (ref) return { mode: 'barcode', code: ref.code, item: ref.item };
@@ -337,4 +339,46 @@ export function bestSplit(ranked, home, distFn, opts = {}) {
   const extraKm = Math.max(0, route - singleRoute);
   const threshold = Math.max(minAbs, single * minPct);
   return { ...top, single, best, saving, extraKm, route, threshold, worth: saving >= threshold };
+}
+
+// ------------------------------------------------------------ branch search
+const PLACE_ALIASES = [
+  [/(^|\s)פת(\s|$)/g, ' פתח תקוה '], [/(^|\s)רג(\s|$)/g, ' רמת גנ '], [/(^|\s)בב(\s|$)/g, ' בני ברק '],
+  [/(^|\s)ראשלצ(\s|$)/g, ' ראשונ לציונ '], [/(^|\s)תא(\s|$)/g, ' תל אביב '], [/(^|\s)קא(\s|$)/g, ' קרית אונו '],
+];
+export function normPlace(s) {
+  let t = ' ' + norm(s).replace(/-/g, ' ') + ' ';
+  for (const [re, rep] of PLACE_ALIASES) t = t.replace(re, rep);
+  return t.replace(/וו/g, 'ו').replace(/יי/g, 'י').replace(/\s+/g, ' ').trim();
+}
+function placeTokMatch(q, t) {
+  if (q === t) return true;
+  if (/^\d/.test(q) || /^\d/.test(t)) return false;
+  if (q.length >= 2 && t.startsWith(q)) return true;
+  if (q.length >= 3 && t.length >= 3 && stem(q) === stem(t)) return true;
+  return false;
+}
+
+/** Find branches in the directory for a typed chain + address. */
+export function findBranches(chainText, addrText, dir, limit = 12) {
+  const ct = normPlace(chainText).split(' ').filter(Boolean);
+  const at = normPlace(addrText).split(' ').filter(t => t && !['רחוב', 'רח', 'סניף', 'שד', 'שדרות'].includes(t));
+  const out = [];
+  for (const b of dir) {
+    if (!b._p) {
+      b._c = normPlace(`${b.chain_he} ${b.sub_chain || ''} ${b.name}`).split(' ');
+      b._a = normPlace(`${b.name} ${b.address} ${b.city}`).split(' ');
+    }
+    if (ct.length && !ct.every(q => b._c.some(t => placeTokMatch(q, t)))) continue;
+    let score = 0;
+    if (at.length) {
+      let got = 0;
+      for (const q of at) if (b._a.some(t => placeTokMatch(q, t))) got++;
+      score = got / at.length;
+      if (score < 0.5) continue;
+    }
+    out.push({ b, score });
+  }
+  out.sort((x, y) => y.score - x.score);
+  return out.slice(0, limit).map(x => x.b);
 }

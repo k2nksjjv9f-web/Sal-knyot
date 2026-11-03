@@ -49,7 +49,7 @@ ISRAEL_PROXY = os.environ.get("ISRAEL_PROXY") or None
 
 GEO_BLOCKED = {"carrefour", "victory", "mahsanei-hashuk", "het-cohen", "hatzi-hinam"}
 # branches that are not physical shops (online / dark stores)
-VIRTUAL_RE = re.compile(r"online|אונליין|וולט|wolt|משלוחים|מרלוג|מחסן מרכזי", re.I)
+VIRTUAL_RE = re.compile(r"online|אונליין|וולט|wolt|משלוחים|מרלוג|מחסן מרכזי|\bbe\b|ניו פארם", re.I)
 
 http = httpx.Client(timeout=30, headers={"User-Agent": UA}, follow_redirects=True)
 LOG: list[str] = []
@@ -273,6 +273,8 @@ def main() -> int:
     proxy_client = HttpClient(timeout=90, retries=4, proxy=ISRAEL_PROXY)
 
     chain_report, stores_out = [], []
+    directory: list[dict] = []  # every branch of every reachable chain (no prices)
+    extra = {x.strip() for x in CFG.get("extra_stores", [])}  # "chain-storeid" collected regardless of distance
     # second pass for chains that failed on the first attempt (portal hiccups)
     queue = list(chains)
     retried = set()
@@ -331,10 +333,15 @@ def main() -> int:
             sname = clean(st.name)
             if VIRTUAL_RE.search(sname):
                 continue
+            sid0 = f"{slug}-{st.store_id}"
+            directory.append({"id": sid0, "chain": slug, "chain_he": name_he, "store_id": st.store_id,
+                              "name": sname, "address": addr, "city": city,
+                              "sub_chain": clean(st.sub_chain_name)})
+            forced = sid0 in extra
             # 1) coarse filter by city centroid (cheap; few unique cities)
             if city:
                 cg = geo.lookup(f"{city}, ישראל")
-                if cg and haversine(center["lat"], center["lon"], cg["lat"], cg["lon"]) > radius + 15:
+                if cg and not forced and haversine(center["lat"], center["lon"], cg["lat"], cg["lon"]) > radius + 15:
                     continue
             elif not addr:
                 continue
@@ -350,9 +357,11 @@ def main() -> int:
                 loc = geo.lookup(f"{city}, ישראל")
                 quality = "city"
             if loc is None:
-                continue
+                if not forced:
+                    continue
+                loc, quality = {"lat": center["lat"], "lon": center["lon"]}, "unknown"
             dist = haversine(center["lat"], center["lon"], loc["lat"], loc["lon"])
-            if dist > radius:
+            if dist > radius and not forced:
                 continue
             rep["stores_in_area"] += 1
             kept.append((st, city, addr, sname, loc, quality, dist))
@@ -424,6 +433,15 @@ def main() -> int:
         "stores": stores_out,
         "geocode_calls": geo.calls,
     }
+    # keep last known branch list for chains that failed this run
+    have = {d["chain"] for d in directory}
+    prev_dir = fetch_prev("directory.json") or {}
+    for d in prev_dir.get("stores", []):
+        if d["chain"] not in have:
+            directory.append(d)
+    (DATA / "directory.json").write_text(json.dumps(
+        {"generated_at": index["generated_at"], "stores": directory}, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8")
     (DATA / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
     (DATA / "run_log.txt").write_text("\n".join(LOG), encoding="utf-8")
     ok = sum(1 for s in stores_out if s.get("file"))

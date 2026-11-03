@@ -1,0 +1,47 @@
+name: בדיקת ממשק על נתוני אמת
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["עדכון מחירים ופרסום האתר"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  ui-test:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Get the live site's real data
+        run: |
+          BASE=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          mkdir -p t && cp -r site/* t/ && mkdir -p t/data/stores
+          curl -sfL "$BASE/data/index.json" -o t/data/index.json
+          curl -sfL "$BASE/data/directory.json" -o t/data/directory.json || echo "no directory.json yet"
+          python3 - <<'PY'
+          import json, subprocess, os
+          base = os.environ.get("BASE")
+          ix = json.load(open("t/data/index.json"))
+          files = [s["file"] for s in ix["stores"] if s.get("file")]
+          with open("t/files.txt", "w") as f:
+              f.write("\n".join(files))
+          print(len(files), "store files")
+          PY
+          while read -r f; do curl -sfL "$BASE/data/$f" -o "t/data/$f" & done < t/files.txt; wait
+      - run: npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+      - run: node collector/ui_test.cjs t out
+      - name: Publish results to the test-results branch
+        if: always()
+        run: |
+          cd out
+          git init -q -b test-results
+          git config user.name "ui-test"; git config user.email "ui-test@users.noreply.github.com"
+          git add -A && git commit -qm "ui test $(date -u +%F_%H%M)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" test-results

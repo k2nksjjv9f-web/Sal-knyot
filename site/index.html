@@ -25,7 +25,12 @@
   <section class="card" id="searchCard">
     <h2>פרטי החיפוש</h2>
 
-    <label class="lbl" for="address">כתובת</label>
+    <div class="seg" id="modeChips" role="tablist" aria-label="סוג השוואה">
+      <button type="button" data-m="radius" class="on">לפי מרחק מהבית</button>
+      <button type="button" data-m="manual">סניפים שבחרתי</button>
+    </div>
+
+    <label class="lbl" for="address" id="addrLabel">כתובת</label>
     <div class="row">
       <input id="address" type="text" placeholder="לדוגמה: הגפן 10, גני תקווה" autocomplete="street-address">
       <button id="locateBtn" class="btn ghost" type="button">אתר</button>
@@ -35,12 +40,34 @@
       <span id="addrResult" class="muted"></span>
     </div>
 
+    <div id="radiusBlock">
     <label class="lbl">רדיוס חיפוש</label>
     <div class="chips" id="radiusChips">
       <button type="button" data-r="1">1 ק"מ</button>
       <button type="button" data-r="2">2 ק"מ</button>
       <button type="button" data-r="3" class="on">3 ק"מ</button>
       <button type="button" data-r="5">5 ק"מ</button>
+    </div>
+    </div>
+
+    <div id="branchBlock" hidden>
+      <div class="list-head">
+        <label class="lbl" for="bChain">בחירת סניפים להשוואה</label>
+        <div class="list-tools">
+          <select id="savedBranchSets" aria-label="הסופרים הקבועים שלי"><option value="">הסופרים הקבועים שלי…</option></select>
+          <button id="saveBranchesBtn" class="btn ghost sm" type="button">שמור</button>
+          <button id="delBranchesBtn" class="btn ghost sm" type="button" title="מחק רשימת סניפים שמורה">מחק</button>
+        </div>
+      </div>
+      <div class="branch-add">
+        <input id="bChain" type="text" list="chainList" placeholder="שם הרשת, למשל: רמי לוי" autocomplete="off">
+        <datalist id="chainList"></datalist>
+        <input id="bAddr" type="text" placeholder="כתובת או עיר הסניף, למשל: גבעת שמואל" autocomplete="off">
+        <button id="bFind" class="btn ghost" type="button">חפש סניף</button>
+      </div>
+      <div id="bResults"></div>
+      <ol id="bSelected" class="blist"></ol>
+      <p class="muted small" id="bHint">חפש לפי רשת וכתובת, ובחר את הסניף מתוך רשימת הסניפים הרשמית של הרשת. אפשר להוסיף כמה סניפים שרוצים, גם של אותה רשת.</p>
     </div>
 
     <div class="list-head">
@@ -68,7 +95,9 @@
   <section id="results" hidden>
     <div class="summary" id="summary"></div>
 
-    <section class="card">
+    <section class="card" id="matrixCard" hidden></section>
+
+    <section class="card" id="rankCard">
       <h2>השוואת סלים</h2>
       <p class="muted small" id="rankNote"></p>
       <div class="table-wrap"><table class="tbl" id="rankTable"></table></div>

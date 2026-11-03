@@ -84,3 +84,27 @@ dialog::backdrop{background:rgba(20,30,28,.45)}
   .hide-m{display:none}
   .tbl{font-size:13px}
 }
+
+/* --- manual branch selection --- */
+.seg{display:flex;background:#eef1ef;border-radius:12px;padding:4px;gap:4px;margin-bottom:4px}
+.seg button{flex:1;font:inherit;font-size:15px;border:0;background:transparent;border-radius:9px;padding:9px 6px;cursor:pointer;color:var(--muted)}
+.seg button.on{background:#fff;color:var(--accent);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.branch-add{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}
+@media (max-width:700px){.branch-add{grid-template-columns:1fr}}
+#bResults .cand,.blist li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
+#bResults{margin-top:6px}
+#bResults .cand:last-child{border-bottom:0}
+.blist{margin:10px 0 0;padding:0 18px 0 0}
+.blist li{display:list-item}
+.blist li .li-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.x{border:1px solid var(--line);background:#fff;border-radius:8px;width:32px;height:32px;cursor:pointer;color:var(--bad);font-size:16px;flex:none}
+.matrix th,.matrix td{min-width:118px}
+.matrix th:first-child,.matrix td:first-child{position:sticky;right:0;background:#fff;z-index:1;min-width:110px;box-shadow:-1px 0 0 var(--line)}
+.matrix tfoot td{background:#fafcfb;font-weight:600}
+.matrix tfoot tr.total td{font-size:15px}
+.matrix td.best{background:var(--good-bg)}
+.matrix th.nd,.matrix td.nd{background:#f7f7f7;color:var(--muted)}
+.matrix th{white-space:normal;vertical-align:top}
+.matrix th .click{cursor:pointer}
+.rank-list{margin:6px 0 0;padding-right:20px}
+.rank-list li{margin:3px 0}
