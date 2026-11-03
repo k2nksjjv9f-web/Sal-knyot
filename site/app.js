@@ -329,9 +329,11 @@ function renderCoverage() {
 
 function friendlyErr(c) {
   const d = c.detail || '';
-  if (/403|ConnectError|RemoteProtocol|ReadTimeout|ConnectTimeout|empty listing|FileNotFound/i.test(d) && ['carrefour', 'victory', 'mahsanei-hashuk', 'het-cohen', 'hatzi-hinam'].includes(c.slug))
+  if (d.startsWith('geo-blocked') || ['carrefour', 'victory', 'mahsanei-hashuk', 'het-cohen', 'hatzi-hinam'].includes(c.slug))
     return 'הפורטל של הרשת עונה רק לכתובות IP מישראל, ושרת האיסוף נמצא מחוץ לישראל. הרשת לא נכללת בהשוואה.';
-  return d;
+  if (/timed out|timeout|Timeout/.test(d)) return 'הפורטל של הרשת לא הגיב בזמן בריצה האחרונה. ייאסף שוב בריצה הבאה.';
+  if (/^דילוג/.test(d)) return d;
+  return 'שגיאה בקריאת הפורטל: ' + d;
 }
 
 // independents / chains without data, from OpenStreetMap

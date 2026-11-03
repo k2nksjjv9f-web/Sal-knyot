@@ -47,6 +47,10 @@ UA = f"sal-kniyot-price-collector/1.0 (+https://github.com/{REPO})"
 PREV_BASE = os.environ.get("PREV_BASE", "").rstrip("/")
 ISRAEL_PROXY = os.environ.get("ISRAEL_PROXY") or None
 
+GEO_BLOCKED = {"carrefour", "victory", "mahsanei-hashuk", "het-cohen", "hatzi-hinam"}
+# branches that are not physical shops (online / dark stores)
+VIRTUAL_RE = re.compile(r"online|אונליין|וולט|wolt|משלוחים|מרלוג|מחסן מרכזי", re.I)
+
 http = httpx.Client(timeout=30, headers={"User-Agent": UA}, follow_redirects=True)
 LOG: list[str] = []
 
@@ -265,10 +269,18 @@ def main() -> int:
     info = {c.slug: c for c in ilp.list_chains()}
     t0 = time.time()
     budget_s = float(CFG.get("time_budget_min", 75)) * 60
-    proxy_client = HttpClient(proxy=ISRAEL_PROXY) if ISRAEL_PROXY else None
+    # generous timeouts: some portals (Shufersal) are slow to answer listings
+    proxy_client = HttpClient(timeout=90, retries=4, proxy=ISRAEL_PROXY)
 
     chain_report, stores_out = [], []
-    for slug in chains:
+    # second pass for chains that failed on the first attempt (portal hiccups)
+    queue = list(chains)
+    retried = set()
+    while queue:
+        slug = queue.pop(0)
+        if slug in retried:
+            # drop the failed first-pass report for this chain
+            chain_report[:] = [r for r in chain_report if r["slug"] != slug]
         ci = info.get(slug)
         name_he = (ci.name_he if ci and ci.name_he else slug)
         rep = {"slug": slug, "name": name_he, "status": "ok", "detail": "",
@@ -283,14 +295,24 @@ def main() -> int:
                     rep["stores_in_area"] += 1
                     rep["stores_with_prices"] += 1
             continue
+        if slug in GEO_BLOCKED and not ISRAEL_PROXY:
+            rep["status"] = "error"
+            rep["detail"] = "geo-blocked: הפורטל עונה רק לכתובות IP מישראל"
+            log("  skipped: geo-blocked portal (set ISRAEL_PROXY to include)")
+            continue
         try:
-            adapter = get_adapter(slug, client=proxy_client) if proxy_client else get_adapter(slug)
+            adapter = get_adapter(slug, client=proxy_client)
             sref = adapter.latest(FileType.STORES)
             stores = ilp.parse(adapter.download(sref)).stores
         except Exception as exc:
             rep["status"] = "error"
             rep["detail"] = f"{type(exc).__name__}: {str(exc)[:200]}"
             log(f"  stores failed: {rep['detail']}")
+            if slug not in retried:
+                retried.add(slug)
+                queue.append(slug)
+                log("  will retry at the end")
+                continue
             # reuse previous data for this chain, if any
             for sid, s in prev_stores.items():
                 if s["chain"] == slug and reuse_prev(s, stores_out):
@@ -307,6 +329,8 @@ def main() -> int:
                 city = city_codes.get(city.lstrip("0") or "0", "")
             addr = clean(st.address)
             sname = clean(st.name)
+            if VIRTUAL_RE.search(sname):
+                continue
             # 1) coarse filter by city centroid (cheap; few unique cities)
             if city:
                 cg = geo.lookup(f"{city}, ישראל")
